@@ -1,0 +1,65 @@
+﻿services:
+  postgres:
+    image: postgres
+    container_name: fileanalysis-postgres
+    restart: always
+    env_file:
+      - ./.env
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - fileanalysis_network
+    
+    
+  minio:
+      image: minio/minio:latest
+      container_name: fileanalysis-minio
+      restart: always
+      env_file:
+        - ./.env
+      environment:
+        - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+        - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      command: server /data --console-address ":9003"
+      volumes:
+        - minio_data:/data
+      networks:
+        - fileanalysis_network
+    
+  api:
+      build:
+        context: .
+        dockerfile: FileAnalysisService.Presentation/Dockerfile
+      
+      image: fileanalysisservice-api:latest
+      container_name: fileanalysis-api
+      restart: always
+      depends_on:
+        - postgres
+        - minio
+      env_file:
+        - ./.env
+      environment:
+        - ConnectionStrings__Postgres=${ConnectionStrings__Postgres}
+        - Minio__Endpoint=${Minio__Endpoint}
+        - Minio__AccessKey=${Minio__AccessKey}
+        - Minio__SecretKey=${Minio__SecretKey}
+        - Minio__BucketName=${Minio__BucketName}
+        - Minio__UseSSL=${Minio__UseSSL}
+      ports:
+        - "5003:5001"
+        - "5004:5002"
+      networks:
+        - fileanalysis_network
+        
+volumes:
+  postgres_data:
+  minio_data:
+
+networks:
+  fileanalysis_network:
+    driver: bridge

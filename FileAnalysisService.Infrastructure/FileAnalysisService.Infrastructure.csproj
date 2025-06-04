@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.3" />
+      <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.3" />
+      <PackageReference Include="Minio" Version="6.0.4" />
+      <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\FileAnalysisService.Application\FileAnalysisService.Application.csproj" />
+      <ProjectReference Include="..\FileAnalysisService.Domain\FileAnalysisService.Domain.csproj" />
+      <ProjectReference Include="..\FileAnalysisService.Grpc\FileAnalysisService.Grpc.csproj" />
+    </ItemGroup>
+
+</Project>

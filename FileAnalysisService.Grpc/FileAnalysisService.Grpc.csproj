@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Grpc.AspNetCore" Version="2.62.0" />
+        <PackageReference Include="Grpc.Tools" Version="2.62.0">
+            <PrivateAssets>All</PrivateAssets>
+        </PackageReference>
+        <PackageReference Include="Google.Protobuf" Version="3.31.1" />
+    </ItemGroup>
+
+    <ItemGroup>
+    <!-- Привязка .proto для генерации серверных Stub-ов -->
+        <Protobuf Include="Protos\file_storage.proto" GrpcServices="Client" />
+    </ItemGroup>
+
+</Project>

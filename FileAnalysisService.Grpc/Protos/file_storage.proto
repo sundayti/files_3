@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package filestoring;
+
+// Запрос на получение файла по ID
+message GetFileRequest {
+  // Идентификатор файла (GUID в виде строки)
+  string fileId = 1;
+}
+
+// Ответ с содержимым файла и его оригинальным именем
+message GetFileResponse {
+  // Содержимое файла в виде Base64-строки
+  string contentBase64 = 1;
+  // Оригинальное имя файла (например, "document.txt")
+  string fileName = 2;
+}
+
+// Сервис, который предоставляет файл по его идентификатору
+service FileStorage {
+  // RPC-метод: передаём GetFileRequest, получаем GetFileResponse
+  rpc GetFile(GetFileRequest) returns (GetFileResponse);
+}
