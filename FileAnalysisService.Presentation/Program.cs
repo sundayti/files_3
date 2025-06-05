@@ -1,117 +1,179 @@
 // File: FileAnalysisService.Presentation/Program.cs
 
-using System;                                     // ← для Uri
+using System;
+using Filestoring; // namespace из вашего file_storage.proto (sgenerrirovannyi gRPC-клиент)
+using MediatR;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+
+// Пространства имён ваших проектов
 using FileAnalysisService.Application.Commands;
 using FileAnalysisService.Application.Interfaces;
-using FileAnalysisService.Application.Queries;
 using FileAnalysisService.Domain.Interfaces;
 using FileAnalysisService.Infrastructure.Persistence;
 using FileAnalysisService.Infrastructure.Repositories;
 using FileAnalysisService.Infrastructure.Services;
-using Filestoring;                                // ← пространство имён сгенерированного gRPC-клиента
-using MediatR;
-using Microsoft.AspNetCore.Server.Kestrel.Core;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
-var configuration = builder.Configuration;
 
-// ↓↓↓ Обязательно! Читаем GrpcEndpoint из appsettings.json ↓↓↓
-var grpcEndpoint = configuration.GetValue<string>("FileStoring:GrpcEndpoint");
+// ----------------------------------------------------
+// 1. Настроить конфигурацию (чтение из appsettings.json / .env)
+// ----------------------------------------------------
 
-// 1) Конфигурация (appsettings.json + ENV)
-builder.Configuration
-       .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-       .AddEnvironmentVariables();
+// Пример appsettings.json (или его эквивалент в Docker-.env):
+//
+// {
+//   "ConnectionStrings": {
+//     "Postgres": "Host=fileanalysis-postgres;Port=5432;Database=analyticsdb;Username=postgres;Password=postgres"
+//   },
+//   "Minio": {
+//     "Endpoint": "fileanalysis-minio:9000",
+//     "AccessKey": "minio-access-key",
+//     "SecretKey": "minio-secret-key",
+//     "BucketName": "analytics-bucket",
+//     "UseSSL": false
+//   },
+//   "FileStoring": {
+//     // Вот это значение вы заменяете на реальный адрес первого сервиса:
+//     "GrpcEndpoint": "http://84.201.169.225:5001"
+//   },
+//   "QuickChart": {
+//     "BaseUrl": "https://quickchart.io",   // Endpoint QuickChart
+//     "Width": 800,
+//     "Height": 600,
+//     "BackgroundColor": "white"
+//   },
+//   "Logging": {
+//     "LogLevel": {
+//       "Default": "Information",
+//       "Microsoft.AspNetCore": "Warning"
+//     }
+//   }
+// }
 
-// 2) EF Core + PostgreSQL
-var connectionString = configuration.GetConnectionString("Postgres");
-builder.Services.AddDbContext<FileAnalyticsDbContext>(options =>
-    options.UseNpgsql(connectionString)
-);
+IConfiguration configuration = builder.Configuration;
 
-// 3) Репозиторий
-builder.Services.AddScoped<IFileAnalysisRepository, FileAnalysisRepository>();
-
-// 4) MinIO (наследуем из Infrastructure)
-builder.Services.Configure<MinioSettings>(
-    configuration.GetSection("Minio")
-);
-builder.Services.AddSingleton<IStorageClient, MinioStorageClient>();
-
-// 5) gRPC-клиент к FileStoringService: 
-//    — AddGrpcClient «под капотом» создаст GrpcChannel.ForAddress(grpcEndpoint) 
-//    — и зарегистрирует FileStorage.FileStorageClient
-builder.Services.AddGrpcClient<FileStorage.FileStorageClient>(o =>
+// ----------------------------------------------------
+// 2. Добавить DbContext (EF Core) для FileAnalysisService
+// ----------------------------------------------------
+builder.Services.AddDbContext<FileAnalysisDbContext>(options =>
 {
-    o.Address = new Uri(grpcEndpoint);
+    // Читаем строку подключения из конфигурации:
+    var connStr = configuration.GetConnectionString("Postgres") 
+                  ?? configuration["ConnectionStrings:Postgres"];
+    options.UseNpgsql(connStr);
 });
-builder.Services.AddScoped<IFileStorageClient, FileStorageGrpcClient>();
 
-// 6) HTTP-клиент для внешнего WordCloud API
-builder.Services.Configure<WordCloudApiClientSettings>(
-    configuration.GetSection("WordCloudApi")
-);
-builder.Services.AddHttpClient<IWordCloudApiClient, WordCloudApiClient>();
+// ----------------------------------------------------
+// 3. Зарегистрировать репозитории/интерфейсы
+// ----------------------------------------------------
+// Предполагаем, что у вас есть интерфейс IAnalysisResultRepository, 
+// и его реализация AnalysisResultRepository
+builder.Services.AddScoped<IAnalysisResultRepository, AnalysisResultRepository>();
 
-// 7) MediatR (регистрируем Application-ассембли)
-builder.Services.AddMediatR(cfg =>
-    cfg.RegisterServicesFromAssembly(typeof(AnalyzeFileCommand).Assembly)
-);
+// ----------------------------------------------------
+// 4. Зарегистрировать Minio-клиент
+// ----------------------------------------------------
+// Допустим, у вас есть интерфейс IMinioStorageClient и класс MinioStorageClient
+builder.Services.AddSingleton<IMinioStorageClient, MinioStorageClient>();
 
-// 8) Controllers + Swagger
+// ----------------------------------------------------
+// 5. Зарегистрировать gRPC-клиент, чтобы ходить в FileStoringService
+// ----------------------------------------------------
+builder.Services.AddGrpcClient<Filestoring.FileStorage.FileStorageClient>(options =>
+{
+    // Тут мы берём URL из конфигурации. В appsettings.json должно быть:
+    // "FileStoring": { "GrpcEndpoint": "http://84.201.169.225:5001" }
+    var grpcEndpoint = configuration["FileStoring:GrpcEndpoint"];
+    if (string.IsNullOrWhiteSpace(grpcEndpoint))
+    {
+        throw new InvalidOperationException(
+            "FileStoring:GrpcEndpoint не настроен в конфигурации. " +
+            "Добавьте его в appsettings.json или .env."
+        );
+    }
+    options.Address = new Uri(grpcEndpoint);
+});
+
+// Оборачиваем сгенерированный gRPC-клиент в наш “удобный” класс FileStorageGrpcClient
+builder.Services.AddScoped<FileStorageGrpcClient>();
+
+// ----------------------------------------------------
+// 6. Зарегистрировать сервис генерации облака слов (QuickChartWordCloudService)
+// ----------------------------------------------------
+// Сначала зарегистрируем named HttpClient, чтобы задать таймаут и т. п.
+builder.Services.AddHttpClient("QuickChartClient", client =>
+{
+    // Можно дополнительно настроить базовый адрес, таймаут и пр.
+    client.Timeout = TimeSpan.FromSeconds(60);
+});
+
+// Затем регистрируем наш IWordCloudService, передавая в конструктор тот самый HttpClient
+builder.Services.AddScoped<IWordCloudService>(sp =>
+{
+    var httpFactory = sp.GetRequiredService<IHttpClientFactory>();
+    var httpClient  = httpFactory.CreateClient("QuickChartClient");
+    var logger      = sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<QuickChartWordCloudService>>();
+    var config      = sp.GetRequiredService<IConfiguration>();
+    return new QuickChartWordCloudService(httpClient, logger, config);
+});
+
+// ----------------------------------------------------
+// 7. Зарегистрировать MediatR (Application-слой)
+// ----------------------------------------------------
+// Предполагая, что все ваши IRequest/Handlers лежат в сборке FileAnalysisService.Application
+builder.Services.AddMediatR(typeof(AnalyzeFileCommand).Assembly);
+
+// ----------------------------------------------------
+// 8. Добавить контроллеры и Swagger
+// ----------------------------------------------------
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
+builder.Services.AddSwaggerGen(options =>
 {
-    c.SwaggerDoc("v1", new OpenApiInfo
-    {
-        Title = "FileAnalyticsService API",
-        Version = "v1"
-    });
+    options.EnableAnnotations();
 });
 
-// 9) Kestrel: слушаем HTTP/1.1 и HTTP/2 на 5002 
+// ----------------------------------------------------
+// 9. Настроить Kestrel (чтобы отключить HTTPS, если нужно, и включить HTTP/2 для gRPC)
+// ----------------------------------------------------
 builder.WebHost.ConfigureKestrel(options =>
 {
+    // Позволяем слушать и HTTP/1.1, и HTTP/2 (gRPC без TLS будет работать по HTTP/2 plaintext).
     options.ListenAnyIP(5002, listenOptions =>
     {
         listenOptions.Protocols = HttpProtocols.Http1AndHttp2;
+        // Мы не вызываем UseHttps(), потому что внутри Docker обычно делаем plaintext gRPC.
     });
 });
 
+// ----------------------------------------------------
+// Построить и запустить
+// ----------------------------------------------------
 var app = builder.Build();
 
-// 10) Автоматические миграции при старте
-using (var scope = app.Services.CreateScope())
+// Если вы хотите пользоваться Swagger UI:
+if (app.Environment.IsDevelopment() || app.Environment.IsStaging() || app.Environment.IsProduction())
 {
-    var db = scope.ServiceProvider.GetRequiredService<FileAnalyticsDbContext>();
-    db.Database.Migrate();
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "FileAnalyticsService API v1");
+        c.RoutePrefix = "swagger";
+    });
 }
 
-// 11) Pipeline middleware
-if (app.Environment.IsDevelopment())
-{
-    app.UseDeveloperExceptionPage();
-}
-
-app.UseSwagger();
-app.UseSwaggerUI(c =>
-{
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "FileAnalyticsService API v1");
-    c.RoutePrefix = "swagger";
-});
-
-// Если не нужен HTTPS (внутри Docker обычно HTTP/2 plaintext достаточно)
+// Нет необходимости в HTTPS Redirect, потому что мы работаем на HTTP (Docker)
 // app.UseHttpsRedirection();
-// app.UseRouting();
-// app.UseAuthorization();
 
 app.MapControllers();
 
-app.MapGet("/", () => "FileAnalyticsService is running.");
+// Для проверки работоспособности:
+app.MapGet("/", () => "FileAnalysisService is running…");
 
 app.Run();

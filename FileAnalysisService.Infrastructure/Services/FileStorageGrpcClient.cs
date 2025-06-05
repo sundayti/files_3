@@ -12,25 +12,48 @@ using Filestoring;
 using Google.Protobuf;
 using Grpc.Net.Client;
 
-public class FileStorageGrpcClient : IFileStorageClient
+/// <summary>
+/// Обёртка над сгенерированным gRPC-клиентом Filestoring.FileStorageClient.
+/// Позволяет получить файл из первого сервиса по его ID.
+/// </summary>
+public class FileStorageGrpcClient
 {
-    private readonly FileStorage.FileStorageClient _client;
+    private readonly Filestoring.FileStorage.FileStorageClient _grpcClient;
 
-    public FileStorageGrpcClient(FileStorage.FileStorageClient client)
+    public FileStorageGrpcClient(Filestoring.FileStorage.FileStorageClient grpcClient)
     {
-        _client = client;
+        _grpcClient = grpcClient;
     }
 
-    public async Task<FileDto> GetFileAsync(FileId fileId, CancellationToken ct = default)
+    /// <summary>
+    /// Запускает метод DownloadFile у FileStoringService.
+    /// Возвращает кортеж: (байты файла, имя файла, contentType).
+    /// </summary>
+    public async Task<(byte[] Content, string FileName, string ContentType)> DownloadFileAsync(
+        Guid fileId,
+        CancellationToken ct)
     {
-        var request = new FileRequest { FileId = fileId.Value.ToString() };
+        var request = new FileRequest { FileId = fileId.ToString() };
+        var reply = await _grpcClient.DownloadFileAsync(request, cancellationToken: ct);
+        // reply.Content – ByteString, .ToByteArray() даст byte[]
+        return (
+            Content    : reply.Content.ToByteArray(),
+            FileName   : reply.FileName,
+            ContentType: reply.ContentType
+        );
+    }
 
-        var reply = await _client.DownloadFileAsync(request, cancellationToken: ct);
-
-        return new FileDto
+    /// <summary>
+    /// (Если нужно) метод UploadFileAsync – для загрузки файлов в первый сервис.
+    /// </summary>
+    public async Task<Guid> UploadFileAsync(byte[] content, string fileName, CancellationToken ct)
+    {
+        var request = new UploadFileRequest
         {
-            ContentBytes = reply.Content.ToByteArray(),
-            FileName = reply.FileName,
+            Content  = ByteString.CopyFrom(content),
+            FileName = fileName
         };
+        var reply = await _grpcClient.UploadFileAsync(request, cancellationToken: ct);
+        return Guid.Parse(reply.FileId);
     }
 }

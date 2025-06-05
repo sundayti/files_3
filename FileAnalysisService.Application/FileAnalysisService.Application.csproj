@@ -14,6 +14,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\FileAnalysisService.Domain\FileAnalysisService.Domain.csproj" />
+      <ProjectReference Include="..\FileAnalysisService.Grpc\FileAnalysisService.Grpc.csproj" />
     </ItemGroup>
 
 </Project>
