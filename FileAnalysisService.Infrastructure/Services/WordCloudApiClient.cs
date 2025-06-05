@@ -1,49 +1,36 @@
 using FileAnalysisService.Domain.Interfaces;
-
-using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Configuration;
+using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Text;
-using System.Text.Json;
-
 
 namespace FileAnalysisService.Infrastructure.Services;
 
-
-
-public class WordCloudApiClientSettings
-{
-    public string BaseUrl { get; set; } = default!;  // например, "https://api.wordcloud.example.com"
-    public string ApiKey  { get; set; } = string.Empty;
-}
-
+/// <summary>
+/// Реализация IWordCloudApiClient, обращающаяся к QuickChart.io (GET /wordcloud?text=...).
+/// </summary>
 public class WordCloudApiClient : IWordCloudApiClient
 {
     private readonly HttpClient _httpClient;
-    private readonly WordCloudApiClientSettings _settings;
 
-    public WordCloudApiClient(HttpClient http, IOptions<WordCloudApiClientSettings> options)
+    public WordCloudApiClient(HttpClient httpClient)
     {
-        _settings = options.Value;
-        _httpClient = http;
-        _httpClient.BaseAddress = new Uri(_settings.BaseUrl);
-        if (!string.IsNullOrEmpty(_settings.ApiKey))
-        {
-            _httpClient.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", _settings.ApiKey);
-        }
+        _httpClient = httpClient;
     }
 
+    /// <summary>
+    /// Генерирует PNG с облаком слов, обращаясь по GET {BaseUrl}/wordcloud?text={Uri.EscapeDataString(text)}.
+    /// QuickChart.io возвращает изображение.
+    /// </summary>
     public async Task<Stream> GenerateWordCloudAsync(string text, CancellationToken ct = default)
     {
-        var payload = new { text, width = 800, height = 600, format = "png" };
-        var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-
-        var response = await _httpClient.PostAsync("/generate", content, ct);
+        // Конструируем URL: "/wordcloud?text=..."
+        var encoded = Uri.EscapeDataString(text);
+        var response = await _httpClient.GetAsync($"/wordcloud?text={encoded}", ct);
         response.EnsureSuccessStatusCode();
 
         var ms = new MemoryStream();
         await response.Content.CopyToAsync(ms, ct);
-        ms.Position = 0;
+        ms.Seek(0, SeekOrigin.Begin);
         return ms;
     }
 }

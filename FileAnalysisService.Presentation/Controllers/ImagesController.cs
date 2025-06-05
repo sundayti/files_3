@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace FileAnalysisService.Presentation.Controllers;
 
-
 [ApiController]
 [Route("api/[controller]")]
 public class ImagesController : ControllerBase
@@ -18,9 +17,8 @@ public class ImagesController : ControllerBase
     }
 
     /// <summary>
-    /// GET /api/images/{imageKey}
-    /// – отдаёт PNG-стрим из MinIO по ключу imageKey.
-    /// – если не найдено – 404.
+    /// GET api/images/{imageKey}
+    /// Извлекает PNG из MinIO и возвращает его.
     /// </summary>
     [HttpGet("{imageKey}")]
     public async Task<IActionResult> GetImage([FromRoute] string imageKey, CancellationToken ct)

@@ -1,59 +1,38 @@
 using FileAnalysisService.Domain.DTOs;
 using FileAnalysisService.Domain.Interfaces;
 using FileAnalysisService.Domain.ValueObjects;
-using Filestoring;
+using Filestoring;                  // Пространство имён из сгенерированного gRPC
 using Google.Protobuf;
+using Grpc.Net.Client;
+using Microsoft.Extensions.Configuration;
 
 namespace FileAnalysisService.Infrastructure.Services;
 
-using System.Threading;
-using System.Threading.Tasks;
-using Filestoring;
-using Google.Protobuf;
-using Grpc.Net.Client;
-
 /// <summary>
 /// Обёртка над сгенерированным gRPC-клиентом Filestoring.FileStorageClient.
-/// Позволяет получить файл из первого сервиса по его ID.
 /// </summary>
-public class FileStorageGrpcClient
+public class FileStorageGrpcClient : IFileStorageClient
 {
-    private readonly Filestoring.FileStorage.FileStorageClient _grpcClient;
+    private readonly FileStorage.FileStorageClient _grpcClient;
 
-    public FileStorageGrpcClient(Filestoring.FileStorage.FileStorageClient grpcClient)
+    public FileStorageGrpcClient(IConfiguration configuration)
     {
-        _grpcClient = grpcClient;
+        // Читаем URL (например, "http://84.201.169.225:5001")
+        var url = configuration.GetValue<string>("GrpcSettings:FileStorageUrl")
+                  ?? throw new ArgumentException("GrpcSettings:FileStorageUrl не задан в конфигурации");
+        var channel = GrpcChannel.ForAddress(url);
+        _grpcClient = new FileStorage.FileStorageClient(channel);
     }
 
-    /// <summary>
-    /// Запускает метод DownloadFile у FileStoringService.
-    /// Возвращает кортеж: (байты файла, имя файла, contentType).
-    /// </summary>
-    public async Task<(byte[] Content, string FileName, string ContentType)> DownloadFileAsync(
-        Guid fileId,
-        CancellationToken ct)
+    public async Task<FileDto> GetFileAsync(FileId fileId, CancellationToken ct = default)
     {
-        var request = new FileRequest { FileId = fileId.ToString() };
+        var request = new FileRequest { FileId = fileId.Value.ToString() };
         var reply = await _grpcClient.DownloadFileAsync(request, cancellationToken: ct);
-        // reply.Content – ByteString, .ToByteArray() даст byte[]
-        return (
-            Content    : reply.Content.ToByteArray(),
-            FileName   : reply.FileName,
-            ContentType: reply.ContentType
-        );
-    }
 
-    /// <summary>
-    /// (Если нужно) метод UploadFileAsync – для загрузки файлов в первый сервис.
-    /// </summary>
-    public async Task<Guid> UploadFileAsync(byte[] content, string fileName, CancellationToken ct)
-    {
-        var request = new UploadFileRequest
+        return new FileDto
         {
-            Content  = ByteString.CopyFrom(content),
-            FileName = fileName
+            ContentBytes = reply.Content.ToByteArray(),
+            FileName = reply.FileName
         };
-        var reply = await _grpcClient.UploadFileAsync(request, cancellationToken: ct);
-        return Guid.Parse(reply.FileId);
     }
 }

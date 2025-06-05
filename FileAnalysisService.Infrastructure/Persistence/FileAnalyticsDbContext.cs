@@ -2,48 +2,44 @@ using FileAnalysisService.Domain.Entities;
 using FileAnalysisService.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using System;
 
 namespace FileAnalysisService.Infrastructure.Persistence;
 
 public class FileAnalyticsDbContext : DbContext
 {
     public FileAnalyticsDbContext(DbContextOptions<FileAnalyticsDbContext> options)
-        : base(options) { }
+        : base(options)
+    { }
 
     public DbSet<FileAnalysisRecord> FileAnalyses { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        base.OnModelCreating(modelBuilder);
-
         modelBuilder.Entity<FileAnalysisRecord>(entity =>
         {
             entity.ToTable("file_analyses");
+            entity.HasKey(x => x.FileId);
 
-            // ID как GUID
+            // Конвертер для FileId <-> Guid
             var fileIdConverter = new ValueConverter<FileId, Guid>(
                 v => v.Value,
-                v => new FileId(v)
-            );
-            entity.HasKey(x => x.FileId);
-            entity.Property(x => x.FileId)
-                .HasConversion(fileIdConverter)
-                .HasColumnName("file_id")
-                .IsRequired();
+                v => new FileId(v));
 
-            // ImageLocation как строка
-            var imageLocConverter = new ValueConverter<ImageLocation, string>(
+            // Конвертер для ImageLocation <-> string
+            var imageLocationConverter = new ValueConverter<ImageLocation, string>(
                 v => v.Value,
-                v => new ImageLocation(v)
-            );
-            entity.Property(x => x.CloudImageLocation)
-                .HasConversion(imageLocConverter)
-                .HasColumnName("image_location")
-                .HasMaxLength(1024)
+                v => new ImageLocation(v));
+
+            entity.Property(x => x.FileId)
+                .HasColumnName("file_id")
+                .HasConversion(fileIdConverter)
                 .IsRequired();
 
-            // Новые колонки статистики:
+            entity.Property(x => x.CloudImageLocation)
+                .HasColumnName("image_location")
+                .HasConversion(imageLocationConverter)
+                .IsRequired();
+
             entity.Property(x => x.ParagraphCount)
                 .HasColumnName("paragraph_count")
                 .IsRequired();
@@ -56,7 +52,6 @@ public class FileAnalyticsDbContext : DbContext
                 .HasColumnName("character_count")
                 .IsRequired();
 
-            // Дата создания
             entity.Property(x => x.CreatedAtUtc)
                 .HasColumnName("created_at_utc")
                 .IsRequired();
