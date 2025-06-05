@@ -1,23 +1,46 @@
 syntax = "proto3";
 
+option csharp_namespace = "Filestoring";
 package filestoring;
 
-// Запрос на получение файла по ID
-message GetFileRequest {
-  // Идентификатор файла (GUID в виде строки)
-  string fileId = 1;
-}
+// ───── РУССКАЯ ДОКУМЕНТАЦИЯ ─────
+// Service FileStorage умеет:
+//   1) Загружать файл (UploadFile) – клиент отправляет байты + имя, 
+//      сервер возвращает file_id.
+//   2) Скачивать файл (DownloadFile) – клиент отправляет file_id, 
+//      сервер возвращает байты, имя и content_type.
 
-// Ответ с содержимым файла и его оригинальным именем
-message GetFileResponse {
-  // Содержимое файла в виде Base64-строки
-  string contentBase64 = 1;
-  // Оригинальное имя файла (например, "document.txt")
-  string fileName = 2;
-}
-
-// Сервис, который предоставляет файл по его идентификатору
+// ───── Service ─────
 service FileStorage {
-  // RPC-метод: передаём GetFileRequest, получаем GetFileResponse
-  rpc GetFile(GetFileRequest) returns (GetFileResponse);
+  // Unary RPC: загрузка файла.
+  rpc UploadFile(UploadFileRequest)   returns (UploadFileReply);
+  // Unary RPC: скачивание файла.
+  rpc DownloadFile(FileRequest)       returns (DownloadFileReply);
+}
+
+// ───── Messages for Upload ─────
+
+// Запрос на загрузку файла: байты + оригинальное имя
+message UploadFileRequest {
+  bytes content   = 1; // Сырые байты файла
+  string file_name = 2; // Имя, например "document.txt"
+}
+
+// Ответ на загрузку: возвращаем file_id (GUID)
+message UploadFileReply {
+  string file_id  = 1; // Guid, например "67ac2f8b-c6a7-4d2d-bcf2-809ef3c0fa3d"
+}
+
+// ───── Messages for Download ─────
+
+// Запрос на скачивание по file_id
+message FileRequest {
+  string file_id  = 1; // Передаём GUID в виде строки
+}
+
+// Ответ на скачивание: байты + имя + MIME-тип
+message DownloadFileReply {
+  bytes content       = 1; // Сырые байты файла
+  string file_name    = 2; // Оригинальное имя файла
+  string content_type = 3; // MIME-тип, например "application/pdf" или "text/plain"
 }

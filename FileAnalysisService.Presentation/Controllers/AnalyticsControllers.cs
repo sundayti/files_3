@@ -49,10 +49,10 @@ public class AnalyticsController : ControllerBase
             // 400, если не .txt или другая проверка
             return BadRequest(new { error = ex.Message });
         }
-        catch
+        catch (Exception ex)
         {
             // 500 при любой иной критической ошибке
-            return StatusCode(500, new { error = "Внутренняя ошибка сервиса анализа файла." });
+            return StatusCode(500, new { error = $"Внутренняя ошибка сервиса анализа файла {ex.Message}." });
         }
 
         // Формируем абсолютный URL к контроллеру ImagesController.GetImage
