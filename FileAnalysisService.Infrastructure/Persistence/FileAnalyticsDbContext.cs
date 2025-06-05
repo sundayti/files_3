@@ -24,7 +24,7 @@ public class FileAnalyticsDbContext : DbContext
             // ID как GUID
             var fileIdConverter = new ValueConverter<FileId, Guid>(
                 v => v.Value,
-                v => FileId.From(v)
+                v => new FileId(v)
             );
             entity.HasKey(x => x.FileId);
             entity.Property(x => x.FileId)

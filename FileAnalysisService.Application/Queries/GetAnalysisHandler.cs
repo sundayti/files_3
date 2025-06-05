@@ -16,7 +16,7 @@ public class GetAnalysisHandler : IRequestHandler<GetAnalysisQuery, AnalysisResu
 
     public async Task<AnalysisResultDto?> Handle(GetAnalysisQuery request, CancellationToken ct)
     {
-        var fileIdVo = FileId.From(request.FileId);
+        var fileIdVo = new FileId(request.FileId);
         var record = await _repository.GetByFileIdAsync(fileIdVo, ct);
         if (record is null)
             return null;

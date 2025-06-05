@@ -1,6 +1,6 @@
 // File: FileAnalysisService.Presentation/Program.cs
 
-using System.Reflection;
+using System;                                     // ← для Uri
 using FileAnalysisService.Application.Commands;
 using FileAnalysisService.Application.Interfaces;
 using FileAnalysisService.Application.Queries;
@@ -8,6 +8,7 @@ using FileAnalysisService.Domain.Interfaces;
 using FileAnalysisService.Infrastructure.Persistence;
 using FileAnalysisService.Infrastructure.Repositories;
 using FileAnalysisService.Infrastructure.Services;
+using Filestoring;                                // ← пространство имён сгенерированного gRPC-клиента
 using MediatR;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
@@ -18,7 +19,10 @@ using Microsoft.OpenApi.Models;
 var builder = WebApplication.CreateBuilder(args);
 var configuration = builder.Configuration;
 
-// 1) Конфигурация (appsettings.json + EnvironmentVariables)
+// ↓↓↓ Обязательно! Читаем GrpcEndpoint из appsettings.json ↓↓↓
+var grpcEndpoint = configuration.GetValue<string>("FileStoring:GrpcEndpoint");
+
+// 1) Конфигурация (appsettings.json + ENV)
 builder.Configuration
        .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
        .AddEnvironmentVariables();
@@ -32,30 +36,31 @@ builder.Services.AddDbContext<FileAnalyticsDbContext>(options =>
 // 3) Репозиторий
 builder.Services.AddScoped<IFileAnalysisRepository, FileAnalysisRepository>();
 
-// 4) MinIO (скопированные из первого сервиса)
-//    МинюСеттингс и клиента регистрируем из Infrastructure
+// 4) MinIO (наследуем из Infrastructure)
 builder.Services.Configure<MinioSettings>(
     configuration.GetSection("Minio")
 );
 builder.Services.AddSingleton<IStorageClient, MinioStorageClient>();
 
-// 5) gRPC-клиент к FileStoringService
-var grpcEndpoint = configuration.GetValue<string>("FileStoring:GrpcEndpoint");
-builder.Services.AddSingleton<IFileStorageClient>(_ =>
-    new FileStorageGrpcClient(grpcEndpoint)
-);
+// 5) gRPC-клиент к FileStoringService: 
+//    — AddGrpcClient «под капотом» создаст GrpcChannel.ForAddress(grpcEndpoint) 
+//    — и зарегистрирует FileStorage.FileStorageClient
+builder.Services.AddGrpcClient<FileStorage.FileStorageClient>(o =>
+{
+    o.Address = new Uri(grpcEndpoint);
+});
+builder.Services.AddScoped<IFileStorageClient, FileStorageGrpcClient>();
 
-// 6) HTTP-клиент для WordCloud API
+// 6) HTTP-клиент для внешнего WordCloud API
 builder.Services.Configure<WordCloudApiClientSettings>(
     configuration.GetSection("WordCloudApi")
 );
 builder.Services.AddHttpClient<IWordCloudApiClient, WordCloudApiClient>();
 
-// 7) MediatR (Application-ассембли, где лежат команды и запросы)
-builder.Services.AddMediatR(cfg => 
+// 7) MediatR (регистрируем Application-ассембли)
+builder.Services.AddMediatR(cfg =>
     cfg.RegisterServicesFromAssembly(typeof(AnalyzeFileCommand).Assembly)
-    );
-
+);
 
 // 8) Controllers + Swagger
 builder.Services.AddControllers();
@@ -69,7 +74,7 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// 9) Kestrel: слушаем HTTP/1.1 и HTTP/2 на порту 5002
+// 9) Kestrel: слушаем HTTP/1.1 и HTTP/2 на 5002 
 builder.WebHost.ConfigureKestrel(options =>
 {
     options.ListenAnyIP(5002, listenOptions =>
@@ -80,14 +85,14 @@ builder.WebHost.ConfigureKestrel(options =>
 
 var app = builder.Build();
 
-// 10) Применим миграции автоматически при старте
+// 10) Автоматические миграции при старте
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<FileAnalyticsDbContext>();
     db.Database.Migrate();
 }
 
-// 11) Конфигурация middleware pipeline
+// 11) Pipeline middleware
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
@@ -100,7 +105,8 @@ app.UseSwaggerUI(c =>
     c.RoutePrefix = "swagger";
 });
 
-// app.UseHttpsRedirection(); // Если нужна HTTPS (в Docker обычно не ставят)
+// Если не нужен HTTPS (внутри Docker обычно HTTP/2 plaintext достаточно)
+// app.UseHttpsRedirection();
 // app.UseRouting();
 // app.UseAuthorization();
 

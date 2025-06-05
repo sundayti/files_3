@@ -7,7 +7,7 @@ public sealed record FileId
 {
     public Guid Value { get; }
 
-    private FileId(Guid value)
+    public FileId(Guid value)
     {
         if (value == Guid.Empty)
             throw new ArgumentException("FileId не может быть пустым GUID.", nameof(value));

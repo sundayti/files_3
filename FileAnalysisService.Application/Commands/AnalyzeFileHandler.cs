@@ -15,9 +15,9 @@ namespace FileAnalysisService.Application.Commands;
 public class AnalyzeFileHandler : IRequestHandler<AnalyzeFileCommand, AnalysisResultDto>
 {
     private readonly IFileAnalysisRepository _repository;
-    private readonly IFileStorageClient _fileStorageClient;  // теперь возвращает FileDto
-    private readonly IStorageClient _storageClient;          // MinIO
-    private readonly IWordCloudApiClient _wordCloudClient;   // HTTP-клиент к WordCloud
+    private readonly IFileStorageClient _fileStorageClient;  
+    private readonly IStorageClient _storageClient;          
+    private readonly IWordCloudApiClient _wordCloudClient;   
     private readonly IConfiguration _configuration;
 
     public AnalyzeFileHandler(
@@ -36,7 +36,7 @@ public class AnalyzeFileHandler : IRequestHandler<AnalyzeFileCommand, AnalysisRe
 
     public async Task<AnalysisResultDto> Handle(AnalyzeFileCommand request, CancellationToken ct)
     {
-        var fileIdVo = FileId.From(request.FileId);
+        var fileIdVo = new FileId(request.FileId);
 
         // 1) Проверяем, есть ли уже запись в БД
         var existing = await _repository.GetByFileIdAsync(fileIdVo, ct);
@@ -109,7 +109,7 @@ public class AnalyzeFileHandler : IRequestHandler<AnalyzeFileCommand, AnalysisRe
             throw new FileAnalysisException($"Не удалось сохранить изображение WordCloud для файла {fileDto.FileName}", ex);
         }
 
-        // 8) Создаём и сохраняем запись в БД с статистикой
+        // 8) Создаём и сохраняем запись в БД со статистикой
         var record = FileAnalysisRecord.CreateNew(
             fileIdVo,
             new ImageLocation(imageKey),
